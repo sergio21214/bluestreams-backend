@@ -40,7 +40,7 @@ public class IPTVAdminResource {
     public Response importUrl(String url)
             throws Exception {
 
-        importer.importFromUrl("Uploaded Playlist",url);
+        importer.importFromUrl("Uploaded Playlist",url, "","");
 
         return Response.ok().build();
 

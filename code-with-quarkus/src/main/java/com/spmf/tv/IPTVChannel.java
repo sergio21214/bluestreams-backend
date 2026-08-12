@@ -6,26 +6,28 @@ import jakarta.persistence.Entity;
 @Entity
 public class IPTVChannel extends PanacheEntity {
 
-    public Long sourceId;
+    public Long providerId;
+
+    public String providerName;
+
+    public String providerType;
 
     public String name;
 
-    @Column(length=4096)
-    public String logo;
+    @Column(length = 4096)
+    public String streamUrl;
 
-    @Column(length=4096)
-    public String groupTitle;
+    public String providerChannelId;
 
     public String tvgId;
 
-    @Column(length=4096)
-    public String streamUrl;
-
-    public Boolean enabled = true;
-
-    @Column(length=4096)
     public String groupName;
 
-    public String source;
+    public String groupTitle;
+
+    @Column(length = 4096)
+    public String logo;
+
+    public boolean enabled = true;
 
 }

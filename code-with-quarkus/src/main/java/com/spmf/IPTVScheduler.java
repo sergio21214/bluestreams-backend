@@ -1,10 +1,14 @@
 package com.spmf;
 
 
+import com.spmf.iptv.client.IPTVClient;
+import com.spmf.iptv.client.IPTVClientFactory;
+import com.spmf.iptv.config.IPTVConfig;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
+
+import java.io.InputStream;
 
 @ApplicationScoped
 public class IPTVScheduler {
@@ -13,17 +17,25 @@ public class IPTVScheduler {
     IPTVConfig config;
 
     @Inject
+    IPTVClientFactory factory;
+
+    @Inject
     IPTVImportService importer;
 
     @Scheduled(every = "12h")
-    @Transactional
     void refresh() throws Exception {
 
         for (IPTVConfig.Provider provider : config.providers()) {
 
-            importer.importFromUrl(
-                    provider.name(),
-                    provider.url()
+            IPTVClient client =
+                    factory.get(provider);
+
+            InputStream playlist =
+                    client.downloadPlaylist(provider);
+
+            importer.importFromStream(
+                    playlist,
+                    provider.name()
             );
 
         }

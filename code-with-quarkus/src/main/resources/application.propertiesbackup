@@ -20,14 +20,11 @@ quarkus.hibernate-orm.schema-management.strategy=drop-and-create
 
 quarkus.datasource.jdbc.max-size=3
 quarkus.datasource.jdbc.min-size=1
-
+quarkus.hibernate-orm.jdbc.statement-batch-size=0
 
 quarkus.datasource.jdbc.additional-jdbc-properties.busy_timeout=5000
 quarkus.datasource.jdbc.additional-jdbc-properties.journal_mode=WAL
 quarkus.transaction-manager.default-transaction-timeout=300
-quarkus.vertx.max-event-loop-execute-time=90s
-quarkus.vertx.warning-grace-period=90s
-quarkus.hibernate-orm.jdbc.statement-batch-size=50
 mp.jwt.verify.issuer=myflix
 
 smallrye.jwt.sign.key.location=privateKey.pem
@@ -40,8 +37,17 @@ iptv.providers[0].type=m3u
 iptv.providers[0].name=Chile
 iptv.providers[0].url=https://m3u.cl/lista/CL.m3u
 
+
+
 iptv.providers[1].type=xtream
 iptv.providers[1].name=DragoMagictv
 iptv.providers[1].server=https://fnxtv.com:8443
 iptv.providers[1].user=DragoMagic2.0
 iptv.providers[1].pass=rAGKtEx4gv
+
+#iptv.providers[3].type=m3u
+#iptv.providers[3].name=Global
+#iptv.providers[3].url=https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8
+
+#iptv.providers[2].name=Global total
+#iptv.providers[2].url=https://iptv-org.github.io/iptv/index.m3u
