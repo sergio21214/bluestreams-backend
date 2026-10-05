@@ -23,7 +23,7 @@ public class ThumbnailService {
                     );
 
             String outputPath =
-                    "G:/SPMF/thumbnails/"
+                    "/mnt/bluestreams/SPMF/thumbnails/"
                             + cleanName
                             + ".jpg";
 

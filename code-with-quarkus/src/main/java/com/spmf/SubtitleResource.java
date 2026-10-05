@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 public class SubtitleResource {
 
     private static final String SUBTITLE_PATH =
-            "G:/SPMF/subtitles";
+            "/mnt/bluestreams/SPMF/subtitles";
 
     @GET
     @Path("/{folder}/list")

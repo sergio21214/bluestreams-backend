@@ -22,7 +22,7 @@ public class HlsResource {
             @PathParam("fileName") String fileName) {
 
         File file =
-                new File("G:/SPMF/hls/" + movie + "/" + fileName);
+                new File("/mnt/bluestreams/SPMF/hls/" + movie + "/" + fileName);
 
         if (!file.exists()) {
             return Response.status(404).build();

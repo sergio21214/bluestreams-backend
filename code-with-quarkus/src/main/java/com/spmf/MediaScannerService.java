@@ -18,7 +18,7 @@ public class MediaScannerService {
     public void scanVideos() {
 
         File root =
-                new File("G:/SPMF/videos");
+                new File("/mnt/bluestreams/SPMF/videos");
 
         if (!root.exists()) {
 
@@ -273,4 +273,16 @@ public class MediaScannerService {
                         + item.title
         );
     }
+
+    @Transactional
+    public MediaItem findByFilePath(
+            String filePath
+    ) {
+
+        return MediaItem.find(
+                "filePath",
+                filePath
+        ).firstResult();
+    }
+
 }

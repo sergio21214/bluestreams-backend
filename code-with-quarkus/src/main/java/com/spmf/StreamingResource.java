@@ -16,7 +16,7 @@ public class StreamingResource {
     @Produces("video/mp4")
     public Response stream(@PathParam("filename") String filename) {
 
-        File video = new File("G:/SPMF/videos/" + filename);
+        File video = new File("/mnt/bluestreams/SPMF/videos/" + filename);
 
         if (!video.exists()) {
             return Response.status(Response.Status.NOT_FOUND).build();

@@ -27,7 +27,7 @@ public class AudioResource {
 
         File audio =
                 new File(
-                        "G:/SPMF/media/music/"
+                        "/mnt/bluestreams/SPMF/media/music/"
                                 + item.folderName
                                 + "/"
                                 + item.filename

@@ -48,6 +48,8 @@ public class MediaItem extends PanacheEntityBase {
     public Long durationMs;
     @Column(name = "file_path")
     public String filePath;
+    @Column(name = "genre")
+    public String genre;
 
 
 }

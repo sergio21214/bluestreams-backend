@@ -20,4 +20,5 @@ public class MusicHistory extends PanacheEntity {
     public LocalDateTime lastPlayed;
     
     public Boolean counted = false;
+    public long sessionStartPositionSeconds;
 }

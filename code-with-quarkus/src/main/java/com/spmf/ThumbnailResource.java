@@ -19,7 +19,7 @@ public class ThumbnailResource {
             @PathParam("filename") String filename) {
 
         File image =
-                new File("G:/SPMF/thumbnails/" + filename);
+                new File("/mnt/bluestreams/SPMF/thumbnails/" + filename);
 
         if (!image.exists()) {
             return Response.status(404).build();

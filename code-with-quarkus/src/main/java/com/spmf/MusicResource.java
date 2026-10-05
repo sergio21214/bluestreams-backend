@@ -4,16 +4,28 @@ import com.spmf.dto.AlbumDto;
 import com.spmf.dto.ArtistDto;
 import com.spmf.dto.MusicLibraryDto;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.annotation.security.RolesAllowed;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Response;
+
+import java.nio.file.Files;
+import com.spmf.music.MusicDownloadJob;
+import jakarta.annotation.security.RolesAllowed;
+import java.util.List;
 
 import static io.quarkus.hibernate.orm.panache.Panache.getEntityManager;
 
@@ -160,14 +172,25 @@ public class MusicResource {
         if (lower.endsWith(".ogg")) {
             return "audio/ogg";
         }
+        if (lower.endsWith(".webm")) {
+            return "audio/webm";
+        }
+
+        if (lower.endsWith(".opus")) {
+            return "audio/opus";
+        }
 
         return "application/octet-stream";
     }
 
     @GET
     @Path("/library")
-    @RolesAllowed({"USER","ADMIN"})
-    public MusicLibraryDto library() {
+    @RolesAllowed({"USER", "ADMIN"})
+    public MusicLibraryDto library(
+            @QueryParam("genre") String genre,
+            @QueryParam("artist") String artist,
+            @QueryParam("album") String album
+    ) {
 
         List<MediaItem> tracks =
                 MediaItem.list(
@@ -175,19 +198,85 @@ public class MusicResource {
                         "music"
                 );
 
+        /*
+         * Apply optional filters.
+         *
+         * The filtering happens before the artist/album
+         * hierarchy is built, so the frontend receives
+         * exactly the same MusicLibraryDto structure.
+         */
+
+        if (genre != null && !genre.isBlank()) {
+
+            String normalizedGenre =
+                    genre.trim();
+
+            tracks =
+                    tracks.stream()
+                            .filter(t ->
+                                    t.genre != null &&
+                                            t.genre.equalsIgnoreCase(
+                                                    normalizedGenre
+                                            )
+                            )
+                            .toList();
+        }
+
+        if (artist != null && !artist.isBlank()) {
+
+            String normalizedArtist =
+                    artist.trim();
+
+            tracks =
+                    tracks.stream()
+                            .filter(t ->
+                                    t.artist != null &&
+                                            t.artist.equalsIgnoreCase(
+                                                    normalizedArtist
+                                            )
+                            )
+                            .toList();
+        }
+
+        if (album != null && !album.isBlank()) {
+
+            String normalizedAlbum =
+                    album.trim();
+
+            tracks =
+                    tracks.stream()
+                            .filter(t ->
+                                    t.album != null &&
+                                            t.album.equalsIgnoreCase(
+                                                    normalizedAlbum
+                                            )
+                            )
+                            .toList();
+        }
+
+        /*
+         * Build:
+         *
+         * Artist
+         *   └── Album
+         *         └── Tracks
+         */
+
         Map<String,
-                Map<String,
-                                        List<MediaItem>>> grouped =
+                Map<String, List<MediaItem>>> grouped =
                 tracks.stream()
                         .collect(
                                 Collectors.groupingBy(
-                                        t -> t.artist != null
-                                                ? t.artist
-                                                : "Unknown Artist",
+                                        t ->
+                                                t.artist != null
+                                                        ? t.artist
+                                                        : "Unknown Artist",
+
                                         Collectors.groupingBy(
-                                                t -> t.album != null
-                                                        ? t.album
-                                                        : "Unknown Album"
+                                                t ->
+                                                        t.album != null
+                                                                ? t.album
+                                                                : "Unknown Album"
                                         )
                                 )
                         );
@@ -199,7 +288,7 @@ public class MusicResource {
                 new ArrayList<>();
 
         for (
-                String artist :
+                String artistName :
                 grouped.keySet()
         ) {
 
@@ -207,20 +296,18 @@ public class MusicResource {
                     new ArtistDto();
 
             artistDto.name =
-                    artist;
+                    artistName;
 
             artistDto.albums =
                     new ArrayList<>();
 
-            Map<String,
-                    List<MediaItem>>
-                    albums =
+            Map<String, List<MediaItem>> albums =
                     grouped.get(
-                            artist
+                            artistName
                     );
 
             for (
-                    String album :
+                    String albumName :
                     albums.keySet()
             ) {
 
@@ -228,10 +315,12 @@ public class MusicResource {
                         new AlbumDto();
 
                 albumDto.name =
-                        album;
+                        albumName;
 
                 List<MediaItem> albumTracks =
-                        albums.get(album);
+                        albums.get(
+                                albumName
+                        );
 
                 albumTracks.sort(
                         Comparator.comparing(
@@ -245,9 +334,7 @@ public class MusicResource {
                 albumDto.tracks =
                         albumTracks;
 
-                if (
-                        !albumTracks.isEmpty()
-                ) {
+                if (!albumTracks.isEmpty()) {
 
                     albumDto.artwork =
                             albumTracks.get(0)
@@ -272,4 +359,59 @@ public class MusicResource {
 
         return dto;
     }
+
+    @GET
+    @Path("/music-art/{filename}")
+    @Produces({
+            "image/jpeg",
+            "image/png",
+            "image/webp"
+    })
+    public Response getMusicArtwork(
+            @PathParam("filename") String filename
+    ) {
+
+        java.nio.file.Path artwork =
+                java.nio.file.Path.of(
+                        "/mnt/bluestreams/SPMF/media/music/music-art",
+                        filename
+                );
+
+        if (!Files.exists(artwork)) {
+
+            return Response
+                    .status(Response.Status.NOT_FOUND)
+                    .build();
+        }
+
+        String contentType =
+                determineImageContentType(
+                        filename
+                );
+
+        return Response.ok(
+                artwork.toFile(),
+                contentType
+        ).build();
+    }
+
+    private String determineImageContentType(
+            String filename
+    ) {
+
+        String name =
+                filename.toLowerCase();
+
+        if (name.endsWith(".png")) {
+            return "image/png";
+        }
+
+        if (name.endsWith(".webp")) {
+            return "image/webp";
+        }
+
+        return "image/jpeg";
+    }
+
+
 }

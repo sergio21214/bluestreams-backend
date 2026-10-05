@@ -26,69 +26,6 @@ public class MediaResource {
         return MediaItem.listAll();
     }
 
-//    @GET
-//    @Path("/home")
-//    @Produces(MediaType.APPLICATION_JSON)
-//    public HomeRootResponse home() {
-//
-//        List<MediaItem> all =
-//                MediaItem.listAll();
-//
-//        HomeRootResponse response =
-//                new HomeRootResponse();
-//
-//        // HERO
-//
-//        response.hero =
-//                all.stream()
-//                        .filter(m -> m.poster != null)
-//                        .findFirst()
-//                        .orElse(null);
-//
-//        // MOVIES
-//
-//        response.movies =
-//                all.stream()
-//                        .filter(m ->
-//                                "movie".equals(
-//                                        m.mediaType
-//                                )
-//                        )
-//                        .limit(20)
-//                        .toList();
-//
-//        // SERIES
-//
-//        response.series =
-//                all.stream()
-//                        .filter(m ->
-//                                "episode".equals(
-//                                        m.mediaType
-//                                )
-//                        )
-//                        .distinct()
-//                        .limit(20)
-//                        .toList();
-//
-//        // RECENT
-//
-//        response.recent =
-//                all.stream()
-//                        .sorted((a, b) ->
-//                                b.id.compareTo(a.id)
-//                        )
-//                        .limit(20)
-//                        .toList();
-//
-//        // CONTINUE WATCHING
-//        // frontend handles this for now
-//
-//        response.continueWatching =
-//                List.of();
-//
-//        return response;
-//    }
-
     @GET
     @Path("/series/{title}")
     @Produces(MediaType.APPLICATION_JSON)
@@ -380,22 +317,143 @@ public class MediaResource {
 
     @GET
     @Path("/music")
-    public List<MediaItem> searchMusic() {
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<MediaItem> searchMusic(
+            @QueryParam("genre") String genre,
+            @QueryParam("artist") String artist,
+            @QueryParam("album") String album
+    ) {
+
+        StringBuilder query =
+                new StringBuilder("mediaType = ?1");
+
+        List<Object> parameters =
+                new ArrayList<>();
+
+        parameters.add("music");
+
+        int parameterIndex = 2;
+
+        if (genre != null && !genre.isBlank()) {
+            query.append(
+                    " and lower(genre) = ?" +
+                            parameterIndex
+            );
+
+            parameters.add(
+                    genre.trim().toLowerCase()
+            );
+
+            parameterIndex++;
+        }
+
+        if (artist != null && !artist.isBlank()) {
+            query.append(
+                    " and lower(artist) = ?" +
+                            parameterIndex
+            );
+
+            parameters.add(
+                    artist.trim().toLowerCase()
+            );
+
+            parameterIndex++;
+        }
+
+        if (album != null && !album.isBlank()) {
+            query.append(
+                    " and lower(album) = ?" +
+                            parameterIndex
+            );
+
+            parameters.add(
+                    album.trim().toLowerCase()
+            );
+        }
+
+        query.append(
+                " order by artist asc, album asc, trackNumber asc"
+        );
+
         return MediaItem.list(
-                "mediaType",
-                "music"
+                query.toString(),
+                parameters.toArray()
         );
     }
-//    @GET
-//    @Path("/series/{title}")
-//    public List<MediaItem> seriesEpisodes(
-//            @PathParam("title")
-//            String title
-//    ) {
-//
-//        return MediaItem.list(
-//                "seriesTitle",
-//                title
-//        );
-//    }
+
+    @GET
+    @Path("/music/genres")
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<String> getMusicGenres() {
+
+        return MediaItem.list(
+                        "mediaType",
+                        "music"
+                )
+                .stream()
+                .map(item -> ((MediaItem) item).genre)
+                .filter(
+                        genre ->
+                                genre != null &&
+                                        !genre.isBlank()
+                )
+                .map(String::trim)
+                .distinct()
+                .sorted(
+                        String.CASE_INSENSITIVE_ORDER
+                )
+                .toList();
+    }
+
+
+    @GET
+    @Path("/music/artists")
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<String> getMusicArtists() {
+
+        return MediaItem.list(
+                        "mediaType",
+                        "music"
+                )
+                .stream()
+                .map(item -> ((MediaItem) item).artist)
+                .filter(
+                        artist ->
+                                artist != null &&
+                                        !artist.isBlank()
+                )
+                .map(String::trim)
+                .distinct()
+                .sorted(
+                        String.CASE_INSENSITIVE_ORDER
+                )
+                .toList();
+    }
+
+
+    @GET
+    @Path("/music/albums")
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<String> getMusicAlbums() {
+
+        return MediaItem.list(
+                        "mediaType",
+                        "music"
+                )
+                .stream()
+                .map(item -> ((MediaItem) item).album)
+                .filter(
+                        album ->
+                                album != null &&
+                                        !album.isBlank()
+                )
+                .map(String::trim)
+                .distinct()
+                .sorted(
+                        String.CASE_INSENSITIVE_ORDER
+                )
+                .toList();
+    }
+
+
 }

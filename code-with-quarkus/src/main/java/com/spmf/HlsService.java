@@ -21,7 +21,7 @@ public class HlsService {
 
             File outputDir =
                     new File(
-                            "G:/SPMF/hls/" + movieName
+                            "/mnt/bluestreams/SPMF/hls/" + movieName
                     );
 
             boolean dashAlreadyExists =
@@ -33,7 +33,7 @@ public class HlsService {
             }
 
             String outputPath =
-                    "G:/SPMF/hls/" + movieName;
+                    "/mnt/bluestreams/SPMF/hls/" + movieName;
 
             List<AudioTrack> audioTracks =
                     FFprobeService.getAudioTracks(

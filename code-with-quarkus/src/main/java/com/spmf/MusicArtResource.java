@@ -15,7 +15,7 @@ public class MusicArtResource {
     ) {
 
         String fullPath =
-                "G:/SPMF/media/music/music-art/" + file;
+                "/mnt/bluestreams/SPMF/media/music/music-art/" + file;
 
         System.out.println("Looking for: " + fullPath);
 

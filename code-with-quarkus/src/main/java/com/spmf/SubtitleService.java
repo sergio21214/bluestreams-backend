@@ -27,7 +27,7 @@ public class SubtitleService {
 
             File outputDir =
                     new File(
-                            "G:/SPMF/subtitles/" + movieName
+                            "/mnt/bluestreams/SPMF/subtitles/" + movieName
                     );
 
             outputDir.mkdirs();
@@ -65,7 +65,7 @@ public class SubtitleService {
                                 + ".vtt";
 
                 String outputPath =
-                        "G:/SPMF/subtitles/"
+                        "/mnt/bluestreams/SPMF/subtitles/"
                                 + movieName
                                 + "/"
                                 + outputFilename;

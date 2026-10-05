@@ -13,7 +13,7 @@ public class IPTVStartup {
 
     void onStart(@Observes StartupEvent ev) throws Exception {
 
-        scheduler.refresh();
+        //scheduler.refresh();
 
     }
 

@@ -17,7 +17,7 @@ public class MusicScannerService {
     MusicMetadataService metadataService;
 
     private static final String MUSIC_FOLDER =
-            "G:/SPMF/media/music";
+            "/mnt/bluestreams/SPMF/media/music";
 
     @Transactional
     public void scanMusic() {
@@ -68,6 +68,7 @@ public class MusicScannerService {
                             && !filename.endsWith(".m4a")
                             && !filename.endsWith(".aac")
                             && !filename.endsWith(".ogg")
+                            && !filename.endsWith(".webm")
             ) {
                 continue;
             }
@@ -188,5 +189,16 @@ public class MusicScannerService {
             e.printStackTrace();
 
         }
+    }
+
+    @Transactional
+    public MediaItem findByFilePath(
+            String filePath
+    ) {
+
+        return MediaItem.find(
+                "filePath",
+                filePath
+        ).firstResult();
     }
 }

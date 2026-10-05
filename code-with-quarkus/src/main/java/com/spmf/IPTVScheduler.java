@@ -22,7 +22,7 @@ public class IPTVScheduler {
     @Inject
     IPTVImportService importer;
 
-    @Scheduled(every = "12h")
+    //@Scheduled(every = "12h")
     void refresh() throws Exception {
 
         for (IPTVConfig.Provider provider : config.providers()) {

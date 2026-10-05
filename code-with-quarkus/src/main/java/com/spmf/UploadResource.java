@@ -36,7 +36,7 @@ public class UploadResource {
         try {
 
             File target =
-                    new File("G:/SPMF/videos/" + fileName);
+                    new File("/mnt/bluestreams/SPMF/videos/" + fileName);
 
             Files.copy(
                     file.toPath(),

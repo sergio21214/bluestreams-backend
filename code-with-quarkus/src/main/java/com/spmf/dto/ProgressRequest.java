@@ -8,4 +8,6 @@ public class ProgressRequest {
     public Integer positionSeconds;
 
     public Boolean completed;
+
+    public boolean newSession;
 }

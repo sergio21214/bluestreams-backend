@@ -1,5 +1,11 @@
-*
-!target/*-runner
-!target/*-runner.jar
-!target/lib/*
-!target/quarkus-app/*
+target/
+.git/
+.github/
+
+*.log
+hs_err_pid*
+
+database.sqlite
+
+*.before-linux-paths
+*.backup
