@@ -1,0 +1,38 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Verify Bluestreams disk
+        run: |
+          mountpoint -q /mnt/bluestreams || {
+            echo "ERROR: /mnt/bluestreams is not mounted"
+            exit 1
+          }
+
+      - name: Update repository
+        run: |
+          cd /mnt/bluestreams/BackUp/repos/bluestreams-backend
+          git fetch origin dev
+          git reset --hard origin/dev
+
+      - name: Build backend Docker image
+        run: |
+          cd /mnt/bluestreams/BackUp/repos/bluestreams
+          docker compose build backend
+
+      - name: Deploy backend
+        run: |
+          cd /mnt/bluestreams/BackUp/repos/bluestreams
+          docker compose up -d backend
+
+      - name: Verify backend
+        run: |
+          docker ps --filter "name=bluestreams-backend"
