@@ -47,6 +47,9 @@ public class MusicDownloadService {
     @Inject
     MusicScannerService musicScannerService;
 
+    @Inject
+    YtDlpOptions ytDlpOptions;
+
     private ExecutorService executor;
 
     @PostConstruct
@@ -178,6 +181,10 @@ public class MusicDownloadService {
                 "--no-warnings"
         );
 
+        command.addAll(
+                ytDlpOptions.commonArgs()
+        );
+
         command.add(
                 job.url
         );
@@ -219,6 +226,10 @@ public class MusicDownloadService {
          */
         command.add(
                 "--no-playlist"
+        );
+
+        command.addAll(
+                ytDlpOptions.commonArgs()
         );
 
         /*
@@ -815,6 +826,7 @@ public class MusicDownloadService {
             command.add("--dump-single-json");
             command.add("--no-warnings");
             command.add("--yes-playlist");
+            command.addAll(ytDlpOptions.commonArgs());
             command.add(playlistUrl);
 
             ProcessResult result =

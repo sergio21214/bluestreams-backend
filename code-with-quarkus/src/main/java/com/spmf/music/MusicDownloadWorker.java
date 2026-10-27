@@ -34,6 +34,9 @@ public class MusicDownloadWorker {
     @Inject
     MusicScannerService musicScannerService;
 
+    @Inject
+    YtDlpOptions ytDlpOptions;
+
     public void processJob(Long jobId) {
 
         try {
@@ -106,6 +109,8 @@ public class MusicDownloadWorker {
         command.add("--no-playlist");
         command.add("--no-warnings");
 
+        command.addAll(ytDlpOptions.commonArgs());
+
         command.add(job.url);
 
         ProcessResult result =
@@ -137,6 +142,8 @@ public class MusicDownloadWorker {
         command.add(YTDLP);
 
         command.add("--no-playlist");
+
+        command.addAll(ytDlpOptions.commonArgs());
 
         command.add("-f");
         command.add("bestaudio/best");
