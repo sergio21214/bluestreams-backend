@@ -1,5 +1,6 @@
 package com.spmf.iptv.account;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -38,6 +39,10 @@ public class IptvAccount extends PanacheEntity {
     public IptvAccountStatus status = IptvAccountStatus.UNKNOWN;
 
     public boolean enabled = true;
+
+    @JsonProperty("isDefault")
+    @Column(name = "is_default", nullable = false)
+    public boolean isDefault = false;
 
     @Column(name = "expires_at")
     public LocalDate expiresAt;

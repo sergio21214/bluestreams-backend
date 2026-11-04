@@ -198,6 +198,30 @@ public class IptvAccountStore {
     }
 
     @Transactional
+    public List<IptvAccount> activeForApp() {
+        return IptvAccount.find(
+                "status = ?1 and enabled = true and isDefault = true",
+                IptvAccountStatus.ACTIVE
+        ).list();
+    }
+
+    @Transactional
+    public IptvAccount setDefault(Long id) {
+
+        IptvAccount account = IptvAccount.findById(id);
+
+        if (account == null) {
+            return null;
+        }
+
+        IptvAccount.update("isDefault = false where isDefault = true");
+
+        account.isDefault = true;
+
+        return account;
+    }
+
+    @Transactional
     public Map<String, Long> stats() {
 
         Map<String, Long> result = new LinkedHashMap<>();

@@ -41,7 +41,7 @@ public class IptvAccountResource {
             throw new ForbiddenException("not allowed to read IPTV accounts");
         }
 
-        List<IptvAccount> accounts = store.listActive();
+        List<IptvAccount> accounts = store.activeForApp();
 
         return accounts.stream()
                 .sorted(Comparator.comparing(
@@ -54,7 +54,8 @@ public class IptvAccountResource {
                         account.url,
                         account.expiresAt,
                         account.lastCheckedAt,
-                        account.latencyMs
+                        account.latencyMs,
+                        account.isDefault
                 ))
                 .toList();
     }

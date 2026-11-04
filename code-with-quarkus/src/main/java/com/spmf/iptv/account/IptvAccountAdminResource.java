@@ -6,6 +6,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -78,6 +79,19 @@ public class IptvAccountAdminResource {
     public Response checkOne(@PathParam("id") Long id) {
 
         IptvAccount account = livenessService.checkOne(id);
+
+        if (account == null) {
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+
+        return Response.ok(account).build();
+    }
+
+    @PUT
+    @Path("/{id}/default")
+    public Response setDefault(@PathParam("id") Long id) {
+
+        IptvAccount account = store.setDefault(id);
 
         if (account == null) {
             return Response.status(Response.Status.NOT_FOUND).build();
