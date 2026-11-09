@@ -4,6 +4,7 @@ import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
+import java.net.URLEncoder;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
@@ -14,13 +15,16 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -324,6 +328,148 @@ public class DownloadService {
         } catch (IOException ignored) {
             // Skip files that disappear or cannot be read.
         }
+    }
+
+    // ------------------------------------------------------ downloaded library
+
+    /**
+     * Resolve a client-supplied relative path against the download root.
+     * Returns null when the path is invalid, escapes the root, or is not a file.
+     */
+    public Path resolveDownloadedFile(String relativePath) {
+
+        if (relativePath == null || relativePath.isBlank()) {
+            return null;
+        }
+
+        Path root = resolveDownloadDir(null).toAbsolutePath().normalize();
+        Path candidate = root.resolve(relativePath).normalize();
+
+        if (!candidate.startsWith(root)) {
+            return null;
+        }
+
+        try {
+
+            Path realRoot = root.toRealPath();
+            Path realCandidate = candidate.toRealPath();
+
+            if (!realCandidate.startsWith(realRoot)
+                    || !Files.isRegularFile(realCandidate)) {
+                return null;
+            }
+
+            return realCandidate;
+
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Recursively list downloaded files. By default only video files are
+     * returned; pass {@code includeAll} to include subtitles and anything else.
+     */
+    public List<DownloadedFile> listLibrary(
+            String folder,
+            boolean includeAll
+    ) {
+
+        Path root = resolveDownloadDir(null).toAbsolutePath().normalize();
+        Path start = resolveDownloadDir(sanitizeFolder(folder))
+                .toAbsolutePath()
+                .normalize();
+
+        List<DownloadedFile> files = new ArrayList<>();
+
+        try (java.util.stream.Stream<Path> stream = Files.walk(start)) {
+
+            stream.filter(Files::isRegularFile).forEach(entry -> {
+
+                if (!entry.startsWith(root)) {
+                    return;
+                }
+
+                if (!includeAll && !isVideoFile(entry)) {
+                    return;
+                }
+
+                try {
+
+                    String relativePath = root.relativize(entry)
+                            .toString()
+                            .replace('\\', '/');
+
+                    DownloadedFile file = new DownloadedFile();
+                    file.name = entry.getFileName().toString();
+                    file.relativePath = relativePath;
+                    file.size = Files.size(entry);
+                    file.modified = Files.getLastModifiedTime(entry).toMillis();
+                    file.contentType = contentTypeFor(entry);
+                    file.streamUrl =
+                            "/iptv/downloads/file?path="
+                                    + encodePath(relativePath);
+
+                    files.add(file);
+
+                } catch (IOException ignored) {
+                    // Skip files that vanish during the walk.
+                }
+            });
+
+        } catch (IOException e) {
+
+            Log.warn(
+                    "Could not list downloaded library "
+                            + start + ": " + e.getMessage()
+            );
+        }
+
+        files.sort(Comparator.comparing(file -> file.relativePath));
+
+        return files;
+    }
+
+    private static boolean isVideoFile(Path file) {
+
+        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+
+        return Set.of(
+                ".mp4", ".m4v", ".mkv", ".avi", ".webm", ".mov",
+                ".ts", ".mpg", ".mpeg", ".flv", ".wmv", ".3gp", ".ogv"
+        ).stream().anyMatch(name::endsWith);
+    }
+
+    public static String contentTypeFor(Path file) {
+
+        String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
+
+        if (name.endsWith(".mp4") || name.endsWith(".m4v")) return "video/mp4";
+        if (name.endsWith(".mkv")) return "video/x-matroska";
+        if (name.endsWith(".webm")) return "video/webm";
+        if (name.endsWith(".avi")) return "video/x-msvideo";
+        if (name.endsWith(".mov")) return "video/quicktime";
+        if (name.endsWith(".ts")) return "video/mp2t";
+        if (name.endsWith(".mpg") || name.endsWith(".mpeg")) return "video/mpeg";
+        if (name.endsWith(".flv")) return "video/x-flv";
+        if (name.endsWith(".wmv")) return "video/x-ms-wmv";
+        if (name.endsWith(".3gp")) return "video/3gpp";
+        if (name.endsWith(".ogv")) return "video/ogg";
+        if (name.endsWith(".mp3")) return "audio/mpeg";
+        if (name.endsWith(".m4a")) return "audio/mp4";
+        if (name.endsWith(".aac")) return "audio/aac";
+        if (name.endsWith(".flac")) return "audio/flac";
+        if (name.endsWith(".ogg")) return "audio/ogg";
+        if (name.endsWith(".opus")) return "audio/opus";
+        if (name.endsWith(".vtt")) return "text/vtt; charset=utf-8";
+        if (name.endsWith(".srt")) return "application/x-subrip";
+
+        return "application/octet-stream";
+    }
+
+    private static String encodePath(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8)
+                .replace("+", "%20");
     }
 
     // -------------------------------------------------------------- internals
