@@ -17,6 +17,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +59,8 @@ public class DownloadService {
 
     private final Map<String, DownloadJob> jobs = new ConcurrentHashMap<>();
 
+    private final Map<String, DownloadBatch> batches = new ConcurrentHashMap<>();
+
     private final ExecutorService pool = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "iptv-download");
         thread.setDaemon(true);
@@ -95,29 +98,204 @@ public class DownloadService {
         return job;
     }
 
+    /**
+     * Queue several downloads and return a batch the caller can poll.
+     *
+     * <p>All URLs are validated before any job is queued, so an invalid item
+     * does not leave a half-created batch behind.</p>
+     */
+    public DownloadBatch startBatch(
+            String folder,
+            List<DownloadRequest> items
+    ) throws IOException {
+
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("Items are required");
+        }
+
+        String batchFolder =
+                (folder == null || folder.isBlank())
+                        ? null
+                        : folder;
+
+        for (int index = 0; index < items.size(); index++) {
+
+            DownloadRequest item = items.get(index);
+
+            if (item == null || item.url == null || item.url.isBlank()) {
+                throw new IllegalArgumentException(
+                        "Item " + index + " is missing Url"
+                );
+            }
+
+            URI uri = URI.create(item.url.trim());
+
+            if (!uri.isAbsolute() || uri.getScheme() == null) {
+                throw new IllegalArgumentException(
+                        "Item " + index + " has an invalid Url"
+                );
+            }
+
+            if ((item.folder == null || item.folder.isBlank())
+                    && batchFolder != null) {
+                item.folder = batchFolder;
+            }
+        }
+
+        String batchId = UUID.randomUUID().toString();
+
+        DownloadBatch batch =
+                new DownloadBatch(batchId, batchFolder);
+
+        batches.put(batchId, batch);
+
+        for (DownloadRequest item : items) {
+
+            DownloadJob job = start(item);
+            job.batchId = batchId;
+            batch.jobs.add(job);
+        }
+
+        batch.total = batch.jobs.size();
+
+        Log.info(
+                "Batch queued id=" + batchId
+                        + " jobs=" + batch.total
+                        + " folder=" + batchFolder
+        );
+
+        return batch;
+    }
+
+    public BatchStatus batchStatus(String batchId) {
+
+        DownloadBatch batch = batches.get(batchId);
+
+        if (batch == null) {
+            return null;
+        }
+
+        BatchStatus status = new BatchStatus();
+        status.batchId = batch.batchId;
+        status.folder = batch.folder;
+        status.total = batch.jobs.size();
+        status.createdAt = batch.createdAt;
+
+        int queued = 0;
+        int running = 0;
+        int completed = 0;
+        int failed = 0;
+        long finishedAt = 0;
+
+        for (DownloadJob job : batch.jobs) {
+
+            BatchStatus.JobStatus item = new BatchStatus.JobStatus();
+            item.jobId = job.jobId;
+            item.filename = job.filename;
+            item.status = job.status;
+            item.bytesWritten = job.bytesWritten;
+            item.totalBytes = job.totalBytes;
+            item.error = job.error;
+            item.finishedAt = job.finishedAt;
+            status.jobs.add(item);
+
+            switch (job.status == null ? "" : job.status) {
+                case "completed" -> completed++;
+                case "failed" -> failed++;
+                case "running" -> running++;
+                default -> queued++;
+            }
+
+            finishedAt = Math.max(finishedAt, job.finishedAt);
+        }
+
+        status.queued = queued;
+        status.running = running;
+        status.completed = completed;
+        status.failed = failed;
+
+        if (queued + running > 0) {
+            status.status = "running";
+        } else if (failed == 0) {
+            status.status = "completed";
+            status.finishedAt = finishedAt;
+        } else if (completed == 0) {
+            status.status = "failed";
+            status.finishedAt = finishedAt;
+        } else {
+            status.status = "completed_with_errors";
+            status.finishedAt = finishedAt;
+        }
+
+        return status;
+    }
+
+    public List<BatchStatus> listBatches() {
+
+        return batches.keySet()
+                .stream()
+                .map(this::batchStatus)
+                .filter(status -> status != null)
+                .sorted(
+                        Comparator.comparingLong(
+                                (BatchStatus status) -> status.createdAt
+                        ).reversed()
+                )
+                .toList();
+    }
+
     public DownloadJob status(String jobId) {
         return jobs.get(jobId);
     }
 
     public List<Map<String, Object>> list() {
-        Path dir = resolveDownloadDir(null);
+        return list(null, false);
+    }
+
+    public List<Map<String, Object>> list(
+            String folder,
+            boolean recursive
+    ) {
+
+        Path dir = resolveDownloadDir(sanitizeFolder(folder));
+        Path base = resolveDownloadDir(null);
 
         List<Map<String, Object>> files = new ArrayList<>();
 
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-            for (Path entry : stream) {
-                if (Files.isDirectory(entry)) {
-                    continue;
+        if (recursive) {
+
+            try (java.util.stream.Stream<Path> stream = Files.walk(dir)) {
+
+                stream.filter(Files::isRegularFile)
+                        .forEach(entry -> addFile(files, base, entry));
+
+            } catch (IOException e) {
+
+                Log.warn(
+                        "Could not walk download directory "
+                                + dir + ": " + e.getMessage()
+                );
+            }
+
+        } else {
+
+            try (DirectoryStream<Path> stream =
+                         Files.newDirectoryStream(dir)) {
+
+                for (Path entry : stream) {
+
+                    if (Files.isRegularFile(entry)) {
+                        addFile(files, base, entry);
+                    }
                 }
 
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("name", entry.getFileName().toString());
-                item.put("size", Files.size(entry));
-                item.put("modified", Files.getLastModifiedTime(entry).toMillis());
-                files.add(item);
+            } catch (IOException e) {
+
+                Log.warn(
+                        "Could not list download directory "
+                                + dir + ": " + e.getMessage()
+                );
             }
-        } catch (IOException e) {
-            Log.warn("Could not list download directory " + dir + ": " + e.getMessage());
         }
 
         files.sort((a, b) -> Long.compare(
@@ -126,6 +304,26 @@ public class DownloadService {
         ));
 
         return files;
+    }
+
+    private void addFile(
+            List<Map<String, Object>> files,
+            Path base,
+            Path entry
+    ) {
+
+        try {
+
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("name", entry.getFileName().toString());
+            item.put("relativePath", base.relativize(entry).toString());
+            item.put("size", Files.size(entry));
+            item.put("modified", Files.getLastModifiedTime(entry).toMillis());
+            files.add(item);
+
+        } catch (IOException ignored) {
+            // Skip files that disappear or cannot be read.
+        }
     }
 
     // -------------------------------------------------------------- internals
@@ -323,7 +521,7 @@ public class DownloadService {
         return dot > 0 && dot < base.length() - 1;
     }
 
-    private static String sanitize(String name) {
+    static String sanitize(String name) {
         if (name == null) {
             return null;
         }
@@ -331,7 +529,7 @@ public class DownloadService {
         return name.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]", "_").trim();
     }
 
-    private static String sanitizeFolder(String folder) {
+    static String sanitizeFolder(String folder) {
         if (folder == null || folder.isBlank()) {
             return null;
         }

@@ -20,6 +20,9 @@ public class DownloadJob {
     /** Optional subfolder inside the download directory. */
     public String folder;
 
+    /** Batch this job belongs to, when queued through a batch/season request. */
+    public String batchId;
+
     /** Absolute path of the file on this machine. */
     public String path;
 
