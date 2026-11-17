@@ -1,7 +1,10 @@
 package com.spmf.iptv;
 
 import io.quarkus.logging.Log;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -29,6 +32,10 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Downloads media to this machine's download directory, in the background.
@@ -56,6 +63,10 @@ public class DownloadService {
 
     private static final int BUFFER_SIZE = 256 * 1024;
 
+    private static final long STALL_TIMEOUT_MS = 60_000L;
+
+    private static final int MAX_DOWNLOAD_ATTEMPTS = 5;
+
     private final HttpClient client = HttpClient.newBuilder()
             .followRedirects(HttpClient.Redirect.ALWAYS)
             .connectTimeout(Duration.ofSeconds(30))
@@ -65,11 +76,50 @@ public class DownloadService {
 
     private final Map<String, DownloadBatch> batches = new ConcurrentHashMap<>();
 
-    private final ExecutorService pool = Executors.newFixedThreadPool(4, runnable -> {
-        Thread thread = new Thread(runnable, "iptv-download");
-        thread.setDaemon(true);
-        return thread;
-    });
+    @ConfigProperty(
+            name = "iptv.download.concurrency",
+            defaultValue = "1"
+    )
+    int downloadConcurrency;
+
+    private ExecutorService pool;
+
+    private ScheduledExecutorService watchdog;
+
+    @PostConstruct
+    void initPools() {
+
+        int threads = Math.max(1, downloadConcurrency);
+
+        pool = Executors.newFixedThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "iptv-download");
+            thread.setDaemon(true);
+            return thread;
+        });
+
+        watchdog = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "iptv-download-watchdog");
+            thread.setDaemon(true);
+            return thread;
+        });
+
+        Log.infof(
+                "IPTV download concurrency set to %d",
+                threads
+        );
+    }
+
+    @PreDestroy
+    void shutdownPools() {
+
+        if (pool != null) {
+            pool.shutdownNow();
+        }
+
+        if (watchdog != null) {
+            watchdog.shutdownNow();
+        }
+    }
 
     // ------------------------------------------------------------------ API
 
@@ -476,7 +526,7 @@ public class DownloadService {
 
     private void run(DownloadJob job, URI uri, Path target, DownloadRequest request) {
         try {
-            fetch(uri, target, job);
+            downloadWithRetry(job, uri, target);
             job.status = "completed";
 
             // Subtitles are best effort: one bad subtitle must not fail the download.
@@ -510,6 +560,283 @@ public class DownloadService {
             job.error = e.getMessage();
         } finally {
             job.finishedAt = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Download the main media file with retries and Range resume.
+     *
+     * <p>If the network drops mid-transfer, the next attempt continues at the
+     * current byte count instead of restarting from zero. This is what keeps a
+     * season download recoverable after a Wi-Fi/ISP interruption.</p>
+     */
+    private void downloadWithRetry(
+            DownloadJob job,
+            URI uri,
+            Path target
+    ) throws Exception {
+
+        Exception lastError = null;
+
+        for (int attempt = 1; attempt <= MAX_DOWNLOAD_ATTEMPTS; attempt++) {
+
+            try {
+                downloadAttempt(job, uri, target);
+                return;
+            } catch (Exception e) {
+
+                lastError = e;
+
+                if (attempt == MAX_DOWNLOAD_ATTEMPTS) {
+                    break;
+                }
+
+                long delay = Math.min(
+                        30_000L,
+                        2_000L * attempt * attempt
+                );
+
+                Log.warnf(
+                        "Download attempt %d/%d failed for %s: %s (retrying in %d ms)",
+                        attempt,
+                        MAX_DOWNLOAD_ATTEMPTS,
+                        target.getFileName(),
+                        e.getMessage(),
+                        delay
+                );
+
+                job.status = "running";
+
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw interrupted;
+                }
+            }
+        }
+
+        throw lastError == null
+                ? new IOException("Download failed")
+                : lastError;
+    }
+
+    private void downloadAttempt(
+            DownloadJob job,
+            URI uri,
+            Path target
+    ) throws Exception {
+
+        long existing = Files.exists(target)
+                ? Files.size(target)
+                : 0L;
+
+        job.bytesWritten = existing;
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(uri)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept", "*/*")
+                .timeout(Duration.ofMinutes(30))
+                .GET();
+
+        if (existing > 0) {
+            builder.header("Range", "bytes=" + existing + "-");
+        }
+
+        HttpResponse<InputStream> response = client.send(
+                builder.build(),
+                HttpResponse.BodyHandlers.ofInputStream()
+        );
+
+        int code = response.statusCode();
+
+        if (code == 416 && existing > 0) {
+
+            long total = rangeTotal(
+                    response.headers()
+                            .firstValue("Content-Range")
+                            .orElse(null)
+            );
+
+            response.body().close();
+
+            job.bytesWritten = existing;
+            job.totalBytes = total > 0 ? total : existing;
+            job.status = "completed";
+
+            Log.infof(
+                    "File already complete, skipping: %s (%d bytes)",
+                    target.getFileName(),
+                    existing
+            );
+
+            return;
+        }
+
+        if (code != 200 && code != 206) {
+            response.body().close();
+            throw new IOException("HTTP " + code + " for " + uri);
+        }
+
+        boolean append = code == 206 && existing > 0;
+
+        if (code == 206 && existing > 0) {
+
+            long start = rangeStart(
+                    response.headers()
+                            .firstValue("Content-Range")
+                            .orElse(null)
+            );
+
+            if (start >= 0 && start != existing) {
+
+                response.body().close();
+
+                try (OutputStream ignored =
+                             Files.newOutputStream(
+                                     target,
+                                     StandardOpenOption.CREATE,
+                                     StandardOpenOption.TRUNCATE_EXISTING
+                             )) {
+                    // intentionally empty
+                }
+
+                job.bytesWritten = 0;
+                throw new IOException(
+                        "Range mismatch (wanted " + existing
+                                + ", got " + start + "); restarting"
+                );
+            }
+        }
+
+        if (code == 200) {
+            existing = 0;
+            job.bytesWritten = 0;
+        }
+
+        long contentLength = response.headers()
+                .firstValueAsLong("Content-Length")
+                .orElse(-1);
+
+        if (code == 206) {
+
+            long total = rangeTotal(
+                    response.headers()
+                            .firstValue("Content-Range")
+                            .orElse(null)
+            );
+
+            job.totalBytes = total > 0
+                    ? total
+                    : (existing + contentLength);
+
+        } else {
+
+            job.totalBytes = contentLength;
+        }
+
+        job.status = "running";
+
+        InputStream body = response.body();
+        AtomicLong lastProgress = new AtomicLong(
+                System.currentTimeMillis()
+        );
+
+        ScheduledFuture<?> stallWatch = watchdog.scheduleAtFixedRate(
+                () -> {
+                    if (System.currentTimeMillis()
+                            - lastProgress.get() > STALL_TIMEOUT_MS) {
+
+                        Log.warn(
+                                "Download stalled; closing stream: "
+                                        + target.getFileName()
+                        );
+
+                        try {
+                            body.close();
+                        } catch (IOException ignored) {
+                            // The retry loop will reopen the stream.
+                        }
+                    }
+                },
+                5,
+                5,
+                TimeUnit.SECONDS
+        );
+
+        try (InputStream in = body) {
+
+            try (OutputStream out = append
+                    ? Files.newOutputStream(
+                            target,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.APPEND
+                    )
+                    : Files.newOutputStream(
+                            target,
+                            StandardOpenOption.CREATE,
+                            StandardOpenOption.TRUNCATE_EXISTING
+                    )) {
+
+                byte[] buffer = new byte[BUFFER_SIZE];
+                int read;
+
+                while ((read = in.read(buffer)) != -1) {
+
+                    out.write(buffer, 0, read);
+                    job.bytesWritten += read;
+                    lastProgress.set(System.currentTimeMillis());
+                }
+            }
+
+        } finally {
+            stallWatch.cancel(false);
+        }
+    }
+
+    private long rangeStart(String contentRange) {
+
+        if (contentRange == null || !contentRange.startsWith("bytes ")) {
+            return -1;
+        }
+
+        String spec = contentRange.substring("bytes ".length());
+        int dash = spec.indexOf('-');
+
+        if (dash <= 0) {
+            return -1;
+        }
+
+        try {
+            return Long.parseLong(spec.substring(0, dash));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private long rangeTotal(String contentRange) {
+
+        if (contentRange == null) {
+            return -1;
+        }
+
+        int slash = contentRange.lastIndexOf('/');
+
+        if (slash < 0 || slash == contentRange.length() - 1) {
+            return -1;
+        }
+
+        String value = contentRange.substring(slash + 1);
+
+        if ("*".equals(value)) {
+            return -1;
+        }
+
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
 
