@@ -7,6 +7,7 @@ import com.spmf.MusicScannerService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -18,6 +19,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 @ApplicationScoped
 public class MusicDownloadWorker {
@@ -37,25 +39,41 @@ public class MusicDownloadWorker {
     @Inject
     YtDlpOptions ytDlpOptions;
 
+    @ConfigProperty(
+            name = "music.download.max-attempts",
+            defaultValue = "3"
+    )
+    int maxAttempts;
+
+    @ConfigProperty(
+            name = "music.download.retry-delay-ms",
+            defaultValue = "10000"
+    )
+    long retryDelayMs;
+
+    private static final String[] PERMANENT_FAILURES = {
+            "private video",
+            "this video is private",
+            "members-only",
+            "join this channel",
+            "age-restricted",
+            "sign in to confirm your age",
+            "requested format is not available",
+            "unsupported url",
+            "is not a valid url",
+            "http error 404",
+            "http error 410",
+            "has been removed",
+            "does not exist",
+            "account has been terminated",
+            "channel is not available"
+    };
+
     public void processJob(Long jobId) {
 
         try {
 
-            updateStatus(
-                    jobId,
-                    MusicDownloadJob.Status.DOWNLOADING,
-                    null
-            );
-
-            JsonNode metadata =
-                    extractMetadata(jobId);
-
-            updateMetadata(
-                    jobId,
-                    metadata
-            );
-
-            download(jobId);
+            downloadWithRetries(jobId);
 
             updateStatus(
                     jobId,
@@ -90,6 +108,123 @@ public class MusicDownloadWorker {
                 statusException.printStackTrace();
             }
         }
+    }
+
+    private void downloadWithRetries(
+            Long jobId
+    ) throws Exception {
+
+        int attempts =
+                Math.max(1, maxAttempts);
+
+        Exception lastFailure =
+                null;
+
+        for (
+                int attempt = 1;
+                attempt <= attempts;
+                attempt++
+        ) {
+
+            try {
+
+                updateStatus(
+                        jobId,
+                        MusicDownloadJob.Status.DOWNLOADING,
+                        null
+                );
+
+                JsonNode metadata =
+                        extractMetadata(jobId);
+
+                updateMetadata(
+                        jobId,
+                        metadata
+                );
+
+                download(jobId);
+
+                return;
+
+            } catch (Exception e) {
+
+                lastFailure = e;
+
+                if (
+                        attempt >= attempts ||
+                                !isRetryable(e)
+                ) {
+                    break;
+                }
+
+                long delay =
+                        Math.max(0, retryDelayMs) * attempt;
+
+                System.out.println(
+                        "Music download attempt "
+                                + attempt
+                                + "/"
+                                + attempts
+                                + " failed for job "
+                                + jobId
+                                + ": "
+                                + getErrorMessage(e)
+                                + ". Retrying in "
+                                + delay
+                                + " ms..."
+                );
+
+                try {
+
+                    Thread.sleep(delay);
+
+                } catch (InterruptedException interrupted) {
+
+                    Thread.currentThread()
+                            .interrupt();
+
+                    throw new IllegalStateException(
+                            "Interrupted while waiting to retry music download",
+                            interrupted
+                    );
+                }
+            }
+        }
+
+        throw lastFailure;
+    }
+
+    private boolean isRetryable(
+            Exception e
+    ) {
+
+        if (
+                e instanceof InterruptedException ||
+                        Thread.currentThread().isInterrupted()
+        ) {
+            return false;
+        }
+
+        String message =
+                e.getMessage();
+
+        if (
+                message == null ||
+                        message.isBlank()
+        ) {
+            return true;
+        }
+
+        String lower =
+                message.toLowerCase(Locale.ROOT);
+
+        for (String marker : PERMANENT_FAILURES) {
+            if (lower.contains(marker)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private JsonNode extractMetadata(
