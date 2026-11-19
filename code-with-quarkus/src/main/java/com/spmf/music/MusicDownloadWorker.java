@@ -280,6 +280,10 @@ public class MusicDownloadWorker {
 
         command.addAll(ytDlpOptions.commonArgs());
 
+        command.add("-x");
+        command.add("--audio-format");
+        command.add("m4a");
+
         command.add("-f");
         command.add("bestaudio/best");
 

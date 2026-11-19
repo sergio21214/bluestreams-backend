@@ -3,6 +3,7 @@ package com.spmf;
 
 import com.spmf.music.MusicMetadata;
 import com.spmf.music.MusicMetadataService;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -16,26 +17,31 @@ public class MusicScannerService {
     @Inject
     MusicMetadataService metadataService;
 
+    private final Object scanLock =
+            new Object();
+
     private static final String MUSIC_FOLDER =
             "/mnt/bluestreams/SPMF/media/music";
 
-    @Transactional
     public void scanMusic() {
 
-        File root =
-                new File(MUSIC_FOLDER);
+        synchronized (scanLock) {
 
-        System.out.println(
-                "Music folder exists: "
-                        + root.exists()
-        );
+            File root =
+                    new File(MUSIC_FOLDER);
 
-        System.out.println(
-                "Music folder path: "
-                        + root.getAbsolutePath()
-        );
+            System.out.println(
+                    "Music folder exists: "
+                            + root.exists()
+            );
 
-        scanFolder(root);
+            System.out.println(
+                    "Music folder path: "
+                            + root.getAbsolutePath()
+            );
+
+            scanFolder(root);
+        }
     }
 
     private void scanFolder(
@@ -81,7 +87,20 @@ public class MusicScannerService {
                             + file.getAbsolutePath()
             );
 
-            createMusicEntry(file);
+            try {
+
+                QuarkusTransaction.requiringNew()
+                        .run(() -> createMusicEntry(file));
+
+            } catch (Exception e) {
+
+                System.out.println(
+                        "Failed to scan file: "
+                                + file.getAbsolutePath()
+                );
+
+                e.printStackTrace();
+            }
         }
     }
 
@@ -146,19 +165,7 @@ public class MusicScannerService {
         item.filePath =
                 file.getAbsolutePath();
 
-        try {
-
-            item.persistAndFlush();
-
-        } catch (Exception e) {
-
-            System.out.println(
-                    "Already exists: "
-                            + file.getAbsolutePath()
-            );
-
-            return;
-        }
+        item.persistAndFlush();
 
         System.out.println(
                 "Created music item id = "
