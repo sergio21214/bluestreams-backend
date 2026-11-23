@@ -11,6 +11,7 @@ public record SystemOverview(
         MusicStats music,
         IptvStats iptv,
         DiskStats disk,
+        List<Alert> alerts,
         Links links
 ) {
 
@@ -69,6 +70,20 @@ public record SystemOverview(
             Long totalBytes,
             Long usableBytes,
             Double usedPercent
+    ) {
+    }
+
+    public record Alert(
+            Long id,
+            String name,
+            String status,
+            String severity,
+            String source,
+            String summary,
+            String description,
+            Instant startsAt,
+            Instant endsAt,
+            Instant receivedAt
     ) {
     }
 

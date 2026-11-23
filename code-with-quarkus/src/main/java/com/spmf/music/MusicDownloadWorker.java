@@ -6,6 +6,7 @@ import com.spmf.MediaItem;
 import com.spmf.MusicScannerService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -20,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class MusicDownloadWorker {
@@ -38,6 +40,9 @@ public class MusicDownloadWorker {
 
     @Inject
     YtDlpOptions ytDlpOptions;
+
+    @Inject
+    MeterRegistry registry;
 
     @ConfigProperty(
             name = "music.download.max-attempts",
@@ -71,9 +76,23 @@ public class MusicDownloadWorker {
 
     public void processJob(Long jobId) {
 
+        long started = System.nanoTime();
+
         try {
 
             downloadWithRetries(jobId);
+
+            registry.counter(
+                    "music.download.jobs",
+                    "result",
+                    "completed"
+            ).increment();
+
+            registry.timer(
+                    "music.download.duration",
+                    "result",
+                    "completed"
+            ).record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
 
             updateStatus(
                     jobId,
@@ -92,6 +111,18 @@ public class MusicDownloadWorker {
             );
 
         } catch (Exception e) {
+
+            registry.counter(
+                    "music.download.jobs",
+                    "result",
+                    "failed"
+            ).increment();
+
+            registry.timer(
+                    "music.download.duration",
+                    "result",
+                    "failed"
+            ).record(System.nanoTime() - started, TimeUnit.NANOSECONDS);
 
             e.printStackTrace();
 
@@ -128,6 +159,8 @@ public class MusicDownloadWorker {
 
             try {
 
+                registry.counter("music.download.attempts").increment();
+
                 updateStatus(
                         jobId,
                         MusicDownloadJob.Status.DOWNLOADING,
@@ -159,6 +192,8 @@ public class MusicDownloadWorker {
 
                 long delay =
                         Math.max(0, retryDelayMs) * attempt;
+
+                registry.counter("music.download.retries").increment();
 
                 System.out.println(
                         "Music download attempt "

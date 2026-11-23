@@ -1,5 +1,6 @@
 package com.spmf.iptv.account;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.quarkus.logging.Log;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -17,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,6 +30,9 @@ public class IptvLivenessService {
 
     @Inject
     IptvAccountStore store;
+
+    @Inject
+    MeterRegistry registry;
 
     @ConfigProperty(name = "iptv.liveness.concurrency", defaultValue = "8")
     int concurrency;
@@ -108,7 +113,14 @@ public class IptvLivenessService {
 
             tasks.add(() -> {
 
+                long started = System.nanoTime();
+
                 IptvCheckResult result = check(snapshot);
+
+                recordCheck(
+                        result,
+                        System.nanoTime() - started
+                );
 
                 store.applyResult(
                         snapshot.id(),
@@ -173,11 +185,38 @@ public class IptvLivenessService {
             return null;
         }
 
+        long started = System.nanoTime();
+
         IptvCheckResult result = check(snapshot);
+
+        recordCheck(
+                result,
+                System.nanoTime() - started
+        );
 
         store.applyResult(id, result, failureThreshold);
 
         return store.find(id);
+    }
+
+    private void recordCheck(
+            IptvCheckResult result,
+            long durationNanos
+    ) {
+
+        String outcome = result.outcome().name();
+
+        registry.counter(
+                "iptv.checks",
+                "outcome",
+                outcome
+        ).increment();
+
+        registry.timer(
+                "iptv.check.duration",
+                "outcome",
+                outcome
+        ).record(durationNanos, TimeUnit.NANOSECONDS);
     }
 
     private IptvCheckResult check(IptvAccountStore.Snapshot snapshot) {

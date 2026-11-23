@@ -40,6 +40,9 @@ public class SystemOverviewService {
     @Inject
     SystemStatsService statsService;
 
+    @Inject
+    AlertInboxService alertInboxService;
+
     @ConfigProperty(
             name = "observability.prometheus.url",
             defaultValue = "http://prometheus:9090"
@@ -94,6 +97,25 @@ public class SystemOverviewService {
             );
         }
 
+        List<SystemOverview.Alert> alerts =
+                alertInboxService.recent(20)
+                        .stream()
+                        .map(alert ->
+                                new SystemOverview.Alert(
+                                        alert.id,
+                                        alert.name,
+                                        alert.status,
+                                        alert.severity,
+                                        alert.source,
+                                        alert.summary,
+                                        alert.description,
+                                        alert.startsAt,
+                                        alert.endsAt,
+                                        alert.receivedAt
+                                )
+                        )
+                        .toList();
+
         return new SystemOverview(
                 Instant.now(),
                 health(),
@@ -102,6 +124,7 @@ public class SystemOverviewService {
                 db.music(),
                 db.iptv(),
                 disk(),
+                alerts,
                 links()
         );
     }

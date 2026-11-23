@@ -14,7 +14,11 @@ public class HttpMetricsConfig implements MeterFilter {
             DistributionStatisticConfig config
     ) {
 
-        if (id.getName().startsWith("http.server.requests")) {
+        String name = id.getName();
+
+        if (name.startsWith("http.server.requests")
+                || name.startsWith("music.download")
+                || name.startsWith("iptv.check")) {
 
             return DistributionStatisticConfig.builder()
                     .percentilesHistogram(true)
