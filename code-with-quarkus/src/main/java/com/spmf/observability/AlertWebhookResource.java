@@ -11,14 +11,12 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Map;
-import java.util.Optional;
 
 @Path("/internal/alerts")
 @Produces(MediaType.APPLICATION_JSON)
@@ -31,8 +29,11 @@ public class AlertWebhookResource {
     @Inject
     AlertInboxService alertInboxService;
 
-    @ConfigProperty(name = "alerts.webhook.token")
-    Optional<String> webhookToken;
+    private final String webhookToken =
+            System.getenv().getOrDefault(
+                    "ALERTS_WEBHOOK_TOKEN",
+                    ""
+            );
 
     @POST
     @Path("/alertmanager")
@@ -202,7 +203,9 @@ public class AlertWebhookResource {
     ) {
 
         String expected =
-                webhookToken.orElse("").trim();
+                webhookToken == null
+                        ? ""
+                        : webhookToken.trim();
 
         if (expected.isEmpty()) {
             return false;
