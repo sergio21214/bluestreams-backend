@@ -15,6 +15,9 @@ RUN mvn package -DskipTests
 # =========================
 FROM eclipse-temurin:21-jre
 
+ARG DENO_VERSION=2.9.7
+ARG YTDLP_VERSION=2026.11.23
+
 WORKDIR /app
 
 RUN apt-get update \
@@ -22,11 +25,16 @@ RUN apt-get update \
         ffmpeg \
         curl \
         python3 \
-	unzip \
-    && curl -fsSL https://deno.land/install.sh | sh \
-    && ln -s /root/.deno/bin/deno /usr/local/bin/deno \
-    && curl -L \
-        https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+        unzip \
+        ca-certificates \
+    && curl -fsSL \
+        "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-unknown-linux-gnu.zip" \
+        -o /tmp/deno.zip \
+    && unzip /tmp/deno.zip -d /usr/local/bin \
+    && chmod a+rx /usr/local/bin/deno \
+    && rm /tmp/deno.zip \
+    && curl -fL \
+        "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" \
         -o /usr/local/bin/yt-dlp \
     && chmod a+rx /usr/local/bin/yt-dlp \
     && mkdir -p /root/yt-dlp-plugins \

@@ -24,22 +24,32 @@ public class YtDlpOptions {
     @ConfigProperty(name = "ytdlp.cookies-file")
     Optional<String> cookiesFile;
 
+    @ConfigProperty(
+            name = "ytdlp.plugin-dirs",
+            defaultValue = "/root/yt-dlp-plugins"
+    )
+    String pluginDirs;
+
     public List<String> commonArgs() {
 
         List<String> args = new ArrayList<>();
 
-        StringBuilder extractorArgs =
-                new StringBuilder("youtube:player_client=")
-                        .append(playerClient);
-
-        if (potBaseUrl != null && !potBaseUrl.isBlank()) {
-            extractorArgs
-                    .append(";getpot_bgutil_baseurl=")
-                    .append(potBaseUrl);
+        if (
+                pluginDirs != null
+                        && !pluginDirs.isBlank()
+                        && Files.isDirectory(Path.of(pluginDirs))
+        ) {
+            args.add("--plugin-dirs");
+            args.add(pluginDirs);
         }
 
         args.add("--extractor-args");
-        args.add(extractorArgs.toString());
+        args.add("youtube:player_client=" + playerClient);
+
+        if (potBaseUrl != null && !potBaseUrl.isBlank()) {
+            args.add("--extractor-args");
+            args.add("youtubepot-bgutilhttp:base_url=" + potBaseUrl);
+        }
 
         cookiesFile
                 .filter(value -> !value.isBlank())
